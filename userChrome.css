@@ -1,0 +1,161 @@
+/* === Zen Sidebar Bookmark Tiles === */
+
+/* 1. Zawsze pokazuj przeniesiony pasek zakładek wewnątrz sidebara (także w trybie kompaktowym i Single Toolbar) */
+:root:not([inDOMFullscreen="true"]) #navigator-toolbox #PersonalToolbar {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: static !important;
+  transform: none !important;
+  pointer-events: auto !important;
+
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: 240px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: none !important;
+
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  margin: 2px 0 6px 0 !important;
+  padding: 2px 2px 4px 2px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Ukryj elementy niebędące zakładkami (np. elastyczne odstępy i strzałkę przepełnienia) */
+#navigator-toolbox #PersonalToolbar > :not(#personal-bookmarks),
+#navigator-toolbox #PersonalToolbar #PlacesChevron {
+  display: none !important;
+}
+
+#navigator-toolbox #PersonalToolbar #personal-bookmarks,
+#navigator-toolbox #PersonalToolbar #PlacesToolbar,
+#navigator-toolbox #PersonalToolbar #PlacesToolbar > hbox {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 2. Siatka wielorzędowa (wrap) tak jak na 2. zdjęciu */
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: stretch !important;
+  gap: 5px !important;
+  width: 100% !important;
+  overflow: visible !important;
+  white-space: normal !important;
+}
+
+/* 3. Styl bazowy każdego kafelka */
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  margin: 0 !important;
+  padding: 0 10px !important;
+
+  border-radius: 9px !important;
+  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06)) !important;
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.07), rgba(255, 255, 255, 0.05)) !important;
+  box-shadow: none !important;
+
+  --toolbarbutton-hover-background: transparent !important;
+  --toolbarbutton-active-background: transparent !important;
+  transition: background-color 140ms ease, transform 100ms ease !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item:hover {
+  background-color: light-dark(rgba(0, 0, 0, 0.11), rgba(255, 255, 255, 0.12)) !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item:is([open="true"], :active) {
+  background-color: light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.16)) !important;
+}
+
+/* 4. Zwykłe zakładki (tylko ikona, po 3-4 w rzędzie jak na 2. zdjęciu) */
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item:not([container="true"]) {
+  flex: 1 1 52px !important;
+  min-width: 42px !important;
+  padding: 0 6px !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item:not([container="true"]) > .toolbarbutton-text {
+  display: none !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item > .toolbarbutton-icon {
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+  flex-shrink: 0 !important;
+}
+
+/* 5. Foldery (ikona + nazwa, albo sama ikona jeśli folder nie ma nazwy / ma spację) */
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item[container="true"] {
+  flex: 1 1 auto !important;
+  min-width: 48px !important;
+  gap: 7px !important;
+  justify-content: flex-start !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item[container="true"]:is([label=""], [label=" "]) {
+  justify-content: center !important;
+  gap: 0 !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item[container="true"]:is([label=""], [label=" "]) > .toolbarbutton-text {
+  display: none !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item[container="true"] > .toolbarbutton-text {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item[container="true"] > .toolbarbutton-menu-dropmarker {
+  display: none !important;
+}
+
+/* Separatory między zakładkami robią estetyczne przejście do nowej linii */
+#navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarseparator {
+  flex: 0 0 100% !important;
+  height: 1px !important;
+  margin: 2px 0 !important;
+  border: none !important;
+  background: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08)) !important;
+}
+
+/* 6. Zwężony sidebar (Collapsed Toolbar) – 1 kolumna samych ikon */
+#navigator-toolbox:not([zen-sidebar-expanded="true"]) #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item {
+  flex: 1 1 100% !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  justify-content: center !important;
+  gap: 0 !important;
+}
+
+#navigator-toolbox:not([zen-sidebar-expanded="true"]) #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item > .toolbarbutton-text {
+  display: none !important;
+}
+
+/* 7. Upewnij się, że sidebar w trybie kompaktowym nie schowa się podczas przeglądania folderu zakładek */
+:root[zen-compact-mode="true"] #navigator-toolbox[zen-bookmarks-popup-open="true"] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
