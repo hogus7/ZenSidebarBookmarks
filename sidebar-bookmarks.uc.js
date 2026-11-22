@@ -8,8 +8,36 @@
   if (window.__zenSidebarBookmarkTilesLoaded) return;
   window.__zenSidebarBookmarkTilesLoaded = true;
 
+  const PREF_PREFIX = "mod.sidebar_bookmarks.";
+  const PREF_KEYS = [
+    "tile_height",
+    "tile_width",
+    "icon_size",
+    "tile_gap",
+    "sidebar_padding",
+    "tile_radius",
+  ];
+
   let rafPending = false;
   let openPopupCount = 0;
+
+  function syncPreferences() {
+    const rootStyle = document.documentElement.style;
+    for (const key of PREF_KEYS) {
+      const prefName = PREF_PREFIX + key;
+      const cssVar = `--mod-sidebar_bookmarks-${key}`;
+      try {
+        const val = Services.prefs.getStringPref(prefName, "").trim();
+        if (val) {
+          rootStyle.setProperty(cssVar, val);
+        } else {
+          rootStyle.removeProperty(cssVar);
+        }
+      } catch {
+        rootStyle.removeProperty(cssVar);
+      }
+    }
+  }
 
   function ensureBookmarksReady(toolbar) {
     if (!toolbar) return;
@@ -24,7 +52,6 @@
   }
 
   function findInsertAnchor() {
-    // 1. Aktywny workspace (Zen stawia tam .zen-current-workspace-indicator nad sekcją przypiętych kart / separatorem Clear)
     const activeWs =
       document.querySelector('zen-workspace[active="true"]') ||
       document.querySelector("zen-workspace");
@@ -39,7 +66,6 @@
       if (pinnedSection) return { type: "before", el: pinnedSection };
     }
 
-    // 2. Fallback dla starszych/innych układów Zen
     const globalIndicator = document.querySelector(
       ".zen-current-workspace-indicator, #zen-current-workspace-indicator"
     );
@@ -113,10 +139,17 @@
       return;
     }
 
+    syncPreferences();
     placeToolbar();
     bindPopupCompactModeGuard(toolbar);
 
-    // Reaguj na przełączanie workspace'ów i przeładowania UI
+    Services.prefs.addObserver(PREF_PREFIX, syncPreferences);
+    window.addEventListener(
+      "unload",
+      () => Services.prefs.removeObserver(PREF_PREFIX, syncPreferences),
+      { once: true }
+    );
+
     const observer = new MutationObserver(() => schedulePlacement());
     observer.observe(tabsContainer, {
       attributes: true,
