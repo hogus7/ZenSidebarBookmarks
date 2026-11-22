@@ -1,0 +1,15 @@
+{
+  "id": "zen-sidebar-bookmark-tiles",
+  "name": "Zen Sidebar Bookmark Tiles",
+  "description": "Wyświetla zakładki z paska zakładek jako kafelki w sidebarze pod nazwą workspace'u (działa w Compact Mode).",
+  "author": "Custom",
+  "version": "1.0.0",
+  "style": {
+    "chrome": "chrome.css"
+  },
+  "scripts": {
+    "sidebar-bookmarks.uc.js": {
+      "include": ["chrome://browser/content/browser.xhtml"]
+    }
+  }
+}
