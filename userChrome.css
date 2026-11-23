@@ -167,11 +167,11 @@
 }
 
 /* 8. Usuń pustą przerwę nad pływającym sidebarem w trybie kompaktowym (jak na zdj. 2) */
-:root[zen-compact-mode="true"]:not([zen-single-toolbar="true"]) #navigator-toolbox[zen-sb-gap-fixed="true"] {
+:root[zen-compact-mode="true"]:not([zen-single-toolbar="true"]) #navigator-toolbox#navigator-toolbox[zen-sb-gap-fixed="true"] {
   margin-top: calc(-1 * var(--zen-sb-box-fix, 0px)) !important;
   height: calc(100vh - var(--zen-sb-target-top, 44px) - 4px) !important;
 }
 
-:root[zen-compact-mode="true"]:not([zen-single-toolbar="true"]) #navigator-toolbox[zen-sb-gap-fixed="true"] #titlebar {
+:root[zen-compact-mode="true"]:not([zen-single-toolbar="true"]) #navigator-toolbox#navigator-toolbox[zen-sb-gap-fixed="true"] #titlebar {
   margin-top: calc(-1 * var(--zen-sb-title-fix, 0px)) !important;
 }
