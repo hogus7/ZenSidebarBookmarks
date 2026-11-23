@@ -22,13 +22,11 @@
   border: none !important;
   box-shadow: none !important;
 
-  /* Padding od krawędzi sidebara + delikatny odstęp góra/dół */
   padding: 6px var(--mod-sidebar_bookmarks-sidebar_padding, 8px) !important;
   margin: 2px 0 4px 0 !important;
   flex-shrink: 0 !important;
 }
 
-/* Ukryj elementy niebędące zakładkami (np. elastyczne odstępy i strzałkę przepełnienia) */
 #navigator-toolbox #PersonalToolbar > :not(#personal-bookmarks),
 #navigator-toolbox #PersonalToolbar #PlacesChevron {
   display: none !important;
@@ -45,7 +43,7 @@
   padding: 0 !important;
 }
 
-/* 2. Siatka wielorzędowa (wrap) */
+/* 2. Siatka wielorzędowa */
 #navigator-toolbox #PersonalToolbar #PlacesToolbarItems {
   display: flex !important;
   flex-wrap: wrap !important;
@@ -56,7 +54,7 @@
   white-space: normal !important;
 }
 
-/* 3. Styl bazowy każdego kafelka */
+/* 3. Kafelki */
 #navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item {
   display: flex !important;
   align-items: center !important;
@@ -105,7 +103,7 @@
   flex-shrink: 0 !important;
 }
 
-/* 5. Foldery (ikona + nazwa, albo sama ikona jeśli folder ma pustą nazwę / spację) */
+/* 5. Foldery */
 #navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarbutton.bookmark-item[container="true"] {
   flex: 1 1 auto !important;
   min-width: var(--mod-sidebar_bookmarks-tile_width, 52px) !important;
@@ -137,7 +135,6 @@
   display: none !important;
 }
 
-/* Separatory między zakładkami robią estetyczne przejście do nowej linii */
 #navigator-toolbox #PersonalToolbar #PlacesToolbarItems > toolbarseparator {
   flex: 0 0 100% !important;
   height: 1px !important;
@@ -146,7 +143,7 @@
   background: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08)) !important;
 }
 
-/* 6. Zwężony sidebar (Collapsed Toolbar) – mniejszy padding i 1 kolumna ikon */
+/* 6. Zwężony sidebar (Collapsed Toolbar) */
 :root:not([inDOMFullscreen="true"]) #navigator-toolbox:not([zen-sidebar-expanded="true"]) #PersonalToolbar {
   padding: 4px 4px !important;
 }
@@ -163,8 +160,18 @@
   display: none !important;
 }
 
-/* 7. Upewnij się, że sidebar w trybie kompaktowym nie schowa się podczas przeglądania folderu zakładek */
+/* 7. Utrzymuj sidebar otwarty w trybie kompaktowym, gdy otwarte jest menu folderu */
 :root[zen-compact-mode="true"] #navigator-toolbox[zen-bookmarks-popup-open="true"] {
   opacity: 1 !important;
   pointer-events: auto !important;
+}
+
+/* 8. Usuń pustą przerwę nad pływającym sidebarem w trybie kompaktowym (jak na zdj. 2) */
+:root[zen-compact-mode="true"]:not([zen-single-toolbar="true"]) #navigator-toolbox[zen-sb-gap-fixed="true"] {
+  margin-top: calc(-1 * var(--zen-sb-box-fix, 0px)) !important;
+  height: calc(100vh - var(--zen-sb-target-top, 44px) - 4px) !important;
+}
+
+:root[zen-compact-mode="true"]:not([zen-single-toolbar="true"]) #navigator-toolbox[zen-sb-gap-fixed="true"] #titlebar {
+  margin-top: calc(-1 * var(--zen-sb-title-fix, 0px)) !important;
 }
