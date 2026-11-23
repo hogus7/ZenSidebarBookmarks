@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Zen Sidebar Bookmark Tiles
-// @description    Przenosi pasek zakładek do sidebara jako kafelki, naprawia MMB, usuwa przerwę w Compact Mode i dodaje menu ustawień
+// @description    Przenosi pasek zakładek do sidebara jako kafelki, MMB w tle, LMB w nowej karcie, Compact Mode + ustawienia
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 
@@ -215,60 +215,68 @@
     return null;
   }
 
-  function openBookmarkInBackground(node, event) {
-    const { PlacesUtils, PlacesUIUtils } = getPlacesModules();
+  function isUriBookmark(btn, node, PlacesUtils) {
+    if (!btn || !node) return false;
+    if (btn.getAttribute("container") === "true") return false;
+    if (PlacesUtils && PlacesUtils.nodeIsContainer(node)) return false;
     const isUri = PlacesUtils ? PlacesUtils.nodeIsURI(node) : Boolean(node.uri);
-    const isContainer = PlacesUtils ? PlacesUtils.nodeIsContainer(node) : false;
+    if (!isUri || !node.uri) return false;
+    if (node.uri.startsWith("javascript:") || node.uri.startsWith("place:")) return false;
+    return true;
+  }
 
-    if (isUri && node.uri) {
-      try {
-        if (typeof PlacesUIUtils?._openNodeIn === "function") {
-          PlacesUIUtils._openNodeIn(node, "tabshifted", window);
-          return;
-        }
-        if (typeof PlacesUIUtils?.openNodeIn === "function") {
-          PlacesUIUtils.openNodeIn(node, "tabshifted", { ownerWindow: window });
-          return;
-        }
-      } catch {}
+  function openBookmarkInNewTab(uri, inBackground) {
+    try {
+      if (window.gBrowser?.addTrustedTab) {
+        window.gBrowser.addTrustedTab(uri, { inBackground: Boolean(inBackground) });
+        return;
+      }
+    } catch {}
 
-      try {
-        if (typeof window.openTrustedLinkIn === "function") {
-          window.openTrustedLinkIn(node.uri, "tab", {
-            inBackground: true,
-            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-          });
-          return;
-        }
-      } catch {}
-
-      try {
-        if (window.gBrowser?.addTrustedTab) {
-          window.gBrowser.addTrustedTab(node.uri, { inBackground: true });
-          return;
-        }
-      } catch {}
-
-      if (window.gBrowser?.loadOneTab) {
-        window.gBrowser.loadOneTab(node.uri, {
-          inBackground: true,
+    try {
+      if (typeof window.openTrustedLinkIn === "function") {
+        window.openTrustedLinkIn(uri, "tab", {
+          inBackground: Boolean(inBackground),
           triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
         });
+        return;
       }
-      return;
-    }
+    } catch {}
 
-    if (isContainer && PlacesUIUtils?.openNodeWithEvent) {
-      PlacesUIUtils.openNodeWithEvent(node, event);
+    if (window.gBrowser?.loadOneTab) {
+      window.gBrowser.loadOneTab(uri, {
+        inBackground: Boolean(inBackground),
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
     }
   }
 
-  // Naprawa MMB na poziomie całego okna (capture) – omija blokadę ze strony #tabbrowser-tabs
-  function bindMiddleClickFix() {
-    if (window.__zenBookmarkMmbBound) return;
-    window.__zenBookmarkMmbBound = true;
+  function closeContainingMenu(btn) {
+    let popup = btn?.closest?.("menupopup");
+    while (popup) {
+      const parentPopup = popup.parentElement?.closest?.("menupopup");
+      if (typeof popup.hidePopup === "function") popup.hidePopup();
+      popup = parentPopup;
+    }
+  }
 
-    let pressedBtn = null;
+  // MMB -> zawsze nowa karta w tle | LMB -> zawsze nowa karta (zostawia bieżącą kartę nietkniętą)
+  function bindBookmarkClicks() {
+    if (window.__zenBookmarkClicksBound) return;
+    window.__zenBookmarkClicksBound = true;
+
+    let mmbPressedBtn = null;
+    let lastHandledBtn = null;
+    let lastHandledAt = 0;
+
+    function markHandled(btn) {
+      lastHandledBtn = btn;
+      lastHandledAt = Date.now();
+    }
+
+    function wasJustHandled(btn) {
+      return lastHandledBtn === btn && Date.now() - lastHandledAt < 400;
+    }
 
     window.addEventListener(
       "mousedown",
@@ -276,36 +284,91 @@
         if (e.button !== 1) return;
         const btn = findBookmarkButtonFromEvent(e);
         if (!btn) {
-          pressedBtn = null;
+          mmbPressedBtn = null;
           return;
         }
-        pressedBtn = btn;
+        mmbPressedBtn = btn;
         e.preventDefault();
         e.stopPropagation();
       },
       true
     );
 
-    const handleRelease = (e) => {
+    const handleMmbRelease = (e) => {
       if (e.button !== 1) return;
       const btn = findBookmarkButtonFromEvent(e);
-      if (!btn || btn !== pressedBtn) {
-        if (e.type === "auxclick") pressedBtn = null;
+      if (!btn || btn !== mmbPressedBtn) {
+        if (e.type === "auxclick") mmbPressedBtn = null;
         return;
       }
 
-      pressedBtn = null;
+      mmbPressedBtn = null;
       e.preventDefault();
       e.stopPropagation();
 
+      if (wasJustHandled(btn)) return;
+      markHandled(btn);
+
       const node = btn._placesNode || btn.node;
-      if (node) {
-        openBookmarkInBackground(node, e);
+      if (!node) return;
+
+      const { PlacesUtils, PlacesUIUtils } = getPlacesModules();
+      if (isUriBookmark(btn, node, PlacesUtils)) {
+        openBookmarkInNewTab(node.uri, true);
+        closeContainingMenu(btn);
+      } else if (PlacesUtils?.nodeIsContainer(node) && PlacesUIUtils?.openNodeWithEvent) {
+        PlacesUIUtils.openNodeWithEvent(node, e);
       }
     };
 
-    window.addEventListener("mouseup", handleRelease, true);
-    window.addEventListener("auxclick", handleRelease, true);
+    window.addEventListener("mouseup", handleMmbRelease, true);
+    window.addEventListener("auxclick", handleMmbRelease, true);
+
+    window.addEventListener(
+      "click",
+      (e) => {
+        if (e.button !== 0) return;
+        const btn = findBookmarkButtonFromEvent(e);
+        if (!btn) return;
+
+        const node = btn._placesNode || btn.node;
+        const { PlacesUtils } = getPlacesModules();
+        if (!isUriBookmark(btn, node, PlacesUtils)) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (wasJustHandled(btn)) return;
+        markHandled(btn);
+
+        const inBg = Boolean(e.ctrlKey || e.metaKey);
+        openBookmarkInNewTab(node.uri, inBg);
+        closeContainingMenu(btn);
+      },
+      true
+    );
+
+    window.addEventListener(
+      "command",
+      (e) => {
+        const btn = findBookmarkButtonFromEvent(e);
+        if (!btn) return;
+
+        const node = btn._placesNode || btn.node;
+        const { PlacesUtils } = getPlacesModules();
+        if (!isUriBookmark(btn, node, PlacesUtils)) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (wasJustHandled(btn)) return;
+        markHandled(btn);
+
+        openBookmarkInNewTab(node.uri, false);
+        closeContainingMenu(btn);
+      },
+      true
+    );
   }
 
   function bindPopupCompactModeGuard(toolbar) {
@@ -480,7 +543,7 @@
 
     syncPreferences();
     placeToolbar();
-    bindMiddleClickFix();
+    bindBookmarkClicks();
     bindPopupCompactModeGuard(toolbar);
     bindContextMenuSettings();
 
