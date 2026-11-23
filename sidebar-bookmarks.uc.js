@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Zen Sidebar Bookmark Tiles
-// @description    Przenosi pasek zakładek do sidebara (pod wskaźnik workspace) jako kafelki, działa w Compact Mode
+// @description    Przenosi pasek zakładek do sidebara jako kafelki, naprawia MMB, usuwa przerwę w Compact Mode i dodaje menu ustawień
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
 
@@ -9,13 +9,13 @@
   window.__zenSidebarBookmarkTilesLoaded = true;
 
   const PREF_PREFIX = "mod.sidebar_bookmarks.";
-  const PREF_KEYS = [
-    "tile_height",
-    "tile_width",
-    "icon_size",
-    "tile_gap",
-    "sidebar_padding",
-    "tile_radius",
+  const PREF_CONFIG = [
+    { key: "tile_height", label: "Wysokość kafelków", def: "36px" },
+    { key: "tile_width", label: "Szerokość bazowa kafelka", def: "52px" },
+    { key: "icon_size", label: "Rozmiar ikon", def: "16px" },
+    { key: "tile_gap", label: "Odstęp między kafelkami", def: "6px" },
+    { key: "sidebar_padding", label: "Padding od krawędzi sidebara", def: "8px" },
+    { key: "tile_radius", label: "Zaokrąglenie rogów", def: "9px" },
   ];
 
   let rafPending = false;
@@ -24,7 +24,7 @@
 
   function syncPreferences() {
     const rootStyle = document.documentElement.style;
-    for (const key of PREF_KEYS) {
+    for (const { key } of PREF_CONFIG) {
       const prefName = PREF_PREFIX + key;
       const cssVar = `--mod-sidebar_bookmarks-${key}`;
       try {
@@ -115,7 +115,6 @@
     }
 
     const navRect = navbar.getBoundingClientRect();
-    // Jeśli górny pasek też jest schowany (Hide Toolbar / Hide Both), nie ruszamy odstępu
     if (navRect.height < 10 || navRect.bottom < 10) {
       resetCompactGapFix(toolbox);
       return;
@@ -126,14 +125,12 @@
 
     const titlebar = document.getElementById("titlebar") || toolbox;
     const boxRect = toolbox.getBoundingClientRect();
-    const titleRect = titlebar.getBoundingClientRect();
-
     const curBoxFix = parseFloat(toolbox.style.getPropertyValue("--zen-sb-box-fix")) || 0;
     const curTitleFix = parseFloat(toolbox.style.getPropertyValue("--zen-sb-title-fix")) || 0;
 
     const boxExcess = Math.round(boxRect.top - targetTop);
     if (Math.abs(boxExcess) > 2) {
-      const nextBoxFix = Math.max(0, Math.min(90, curBoxFix + boxExcess));
+      const nextBoxFix = Math.max(0, Math.min(100, curBoxFix + boxExcess));
       toolbox.style.setProperty("--zen-sb-box-fix", `${nextBoxFix}px`);
     }
 
@@ -141,9 +138,8 @@
     const updatedTitleRect = titlebar.getBoundingClientRect();
     const titleExcess = Math.round(updatedTitleRect.top - targetTop);
 
-    // Jeśli nadal jest przerwa wewnątrz #navigator-toolbox (np. padding/margin na #titlebar)
     if (Math.abs(titleExcess) > 2 && updatedBoxRect.top <= targetTop + 4) {
-      const nextTitleFix = Math.max(0, Math.min(90, curTitleFix + titleExcess));
+      const nextTitleFix = Math.max(0, Math.min(100, curTitleFix + titleExcess));
       toolbox.style.setProperty("--zen-sb-title-fix", `${nextTitleFix}px`);
     }
 
@@ -186,40 +182,241 @@
     requestAnimationFrame(placeToolbar);
   }
 
+  // Naprawa MMB (środkowego przycisku myszy) – otwieranie w karcie w tle
+  function bindMiddleClickFix() {
+    const toolbox = document.getElementById("navigator-toolbox");
+    if (!toolbox || toolbox.__zenBookmarkMmbBound) return;
+    toolbox.__zenBookmarkMmbBound = true;
+
+    toolbox.addEventListener(
+      "mousedown",
+      (e) => {
+        if (e.button !== 1) return;
+        const btn = e.target?.closest?.("#PersonalToolbar toolbarbutton.bookmark-item");
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      true
+    );
+
+    toolbox.addEventListener(
+      "auxclick",
+      (e) => {
+        if (e.button !== 1) return;
+        const btn = e.target?.closest?.("#PersonalToolbar toolbarbutton.bookmark-item");
+        if (!btn) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const node = btn._placesNode;
+        if (!node) return;
+
+        try {
+          if (typeof PlacesUtils !== "undefined" && PlacesUtils.nodeIsURI(node)) {
+            if (typeof PlacesUIUtils?._openNodeIn === "function") {
+              PlacesUIUtils._openNodeIn(node, "tabshifted", window);
+            } else if (typeof PlacesUIUtils?.openNodeIn === "function") {
+              PlacesUIUtils.openNodeIn(node, "tabshifted", { ownerWindow: window });
+            } else {
+              throw new Error("Fallback");
+            }
+          } else if (typeof PlacesUtils !== "undefined" && PlacesUtils.nodeIsContainer(node)) {
+            PlacesUIUtils.openNodeWithEvent(node, e);
+          }
+        } catch {
+          if (node.uri && typeof openTrustedLinkIn === "function") {
+            openTrustedLinkIn(node.uri, "tab", {
+              inBackground: true,
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+            });
+          }
+        }
+      },
+      true
+    );
+  }
+
   function bindPopupCompactModeGuard(toolbar) {
     const toolbox = document.getElementById("navigator-toolbox");
     if (!toolbar || !toolbox || toolbar.__zenPopupGuardBound) return;
     toolbar.__zenPopupGuardBound = true;
 
-    toolbar.addEventListener("popupshown", (e) => {
-      if (e.target?.localName !== "menupopup") return;
+    const onShown = (e) => {
+      if (
+        e.target?.localName !== "menupopup" &&
+        e.target?.id !== "zen-sb-tiles-settings-panel"
+      ) {
+        return;
+      }
       openPopupCount++;
       toolbox.setAttribute("zen-bookmarks-popup-open", "true");
-    });
+    };
 
-    toolbar.addEventListener("popuphidden", (e) => {
-      if (e.target?.localName !== "menupopup") return;
+    const onHidden = (e) => {
+      if (
+        e.target?.localName !== "menupopup" &&
+        e.target?.id !== "zen-sb-tiles-settings-panel"
+      ) {
+        return;
+      }
       openPopupCount = Math.max(0, openPopupCount - 1);
       if (openPopupCount === 0) {
         toolbox.removeAttribute("zen-bookmarks-popup-open");
       }
+    };
+
+    toolbar.addEventListener("popupshown", onShown);
+    toolbar.addEventListener("popuphidden", onHidden);
+
+    const panel = document.getElementById("zen-sb-tiles-settings-panel");
+    if (panel) {
+      panel.addEventListener("popupshown", onShown);
+      panel.addEventListener("popuphidden", onHidden);
+    }
+  }
+
+  // Wbudowany panel ustawień pod PPM -> "Ustawienia kafelków zakładek..."
+  function openSettingsPanel() {
+    const toolbar = document.getElementById("PersonalToolbar");
+    if (!toolbar) return;
+
+    const XHTML = "http://www.w3.org/1999/xhtml";
+    let panel = document.getElementById("zen-sb-tiles-settings-panel");
+
+    if (!panel) {
+      panel = document.createXULElement("panel");
+      panel.id = "zen-sb-tiles-settings-panel";
+      panel.setAttribute("type", "arrow");
+      panel.setAttribute("noautofocus", "false");
+
+      const container = document.createElementNS(XHTML, "div");
+      container.style.cssText =
+        "padding: 12px 14px; min-width: 270px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px;";
+
+      const title = document.createElementNS(XHTML, "div");
+      title.textContent = "Ustawienia kafelków zakładek";
+      title.style.cssText = "font-weight: 600; font-size: 13.5px; margin-bottom: 2px;";
+      container.appendChild(title);
+
+      const inputs = {};
+      for (const item of PREF_CONFIG) {
+        const row = document.createElementNS(XHTML, "div");
+        row.style.cssText =
+          "display: flex; align-items: center; justify-content: space-between; gap: 10px;";
+
+        const lbl = document.createElementNS(XHTML, "label");
+        lbl.textContent = item.label;
+        lbl.style.cssText = "opacity: 0.9;";
+
+        const inp = document.createElementNS(XHTML, "input");
+        inp.type = "text";
+        inp.placeholder = item.def;
+        inp.style.cssText =
+          "width: 72px; padding: 4px 7px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.35); background: rgba(128,128,128,0.12); color: inherit; font-size: 12px;";
+        inp.addEventListener("input", () => {
+          const val = inp.value.trim();
+          Services.prefs.setStringPref(PREF_PREFIX + item.key, val || item.def);
+        });
+
+        inputs[item.key] = inp;
+        row.appendChild(lbl);
+        row.appendChild(inp);
+        container.appendChild(row);
+      }
+
+      const btnRow = document.createElementNS(XHTML, "div");
+      btnRow.style.cssText =
+        "display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;";
+
+      const resetBtn = document.createElementNS(XHTML, "button");
+      resetBtn.textContent = "Domyślne";
+      resetBtn.style.cssText =
+        "padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(128,128,128,0.3); background: transparent; color: inherit; cursor: pointer;";
+      resetBtn.addEventListener("click", () => {
+        for (const item of PREF_CONFIG) {
+          Services.prefs.setStringPref(PREF_PREFIX + item.key, item.def);
+          inputs[item.key].value = item.def;
+        }
+      });
+
+      const closeBtn = document.createElementNS(XHTML, "button");
+      closeBtn.textContent = "Gotowe";
+      closeBtn.style.cssText =
+        "padding: 5px 12px; border-radius: 6px; border: none; background: rgba(128,128,128,0.28); color: inherit; font-weight: 600; cursor: pointer;";
+      closeBtn.addEventListener("click", () => panel.hidePopup());
+
+      btnRow.appendChild(resetBtn);
+      btnRow.appendChild(closeBtn);
+      container.appendChild(btnRow);
+      panel.appendChild(container);
+      panel._inputs = inputs;
+
+      (document.getElementById("mainPopupSet") || document.documentElement).appendChild(panel);
+      bindPopupCompactModeGuard(toolbar);
+    }
+
+    for (const item of PREF_CONFIG) {
+      panel._inputs[item.key].value = Services.prefs.getStringPref(
+        PREF_PREFIX + item.key,
+        item.def
+      );
+    }
+
+    panel.openPopup(toolbar, "after_start", 0, 4, false, false);
+  }
+
+  function bindContextMenuSettings() {
+    const placesContext = document.getElementById("placesContext");
+    if (!placesContext || placesContext.__zenTileSettingsBound) return;
+    placesContext.__zenTileSettingsBound = true;
+
+    placesContext.addEventListener("popupshowing", (e) => {
+      if (e.target !== placesContext) return;
+      const toolbar = document.getElementById("PersonalToolbar");
+      const trigger = placesContext.triggerNode || document.popupNode;
+      const inSidebarBookmarks = Boolean(toolbar && trigger && toolbar.contains(trigger));
+
+      let sep = document.getElementById("zen-sb-tiles-settings-sep");
+      let item = document.getElementById("zen-sb-tiles-settings-item");
+
+      if (!item) {
+        sep = document.createXULElement("menuseparator");
+        sep.id = "zen-sb-tiles-settings-sep";
+        item = document.createXULElement("menuitem");
+        item.id = "zen-sb-tiles-settings-item";
+        item.setAttribute("label", "Ustawienia kafelków zakładek...");
+        item.addEventListener("command", openSettingsPanel);
+        placesContext.appendChild(sep);
+        placesContext.appendChild(item);
+      }
+
+      sep.hidden = !inSidebarBookmarks;
+      item.hidden = !inSidebarBookmarks;
     });
   }
 
   function init() {
     const toolbar = document.getElementById("PersonalToolbar");
+    const toolbox = document.getElementById("navigator-toolbox");
     const tabsContainer =
       document.getElementById("tabbrowser-arrowscrollbox") ||
       document.getElementById("tabbrowser-tabs");
 
-    if (!toolbar || !tabsContainer) {
+    if (!toolbar || !toolbox || !tabsContainer) {
       setTimeout(init, 150);
       return;
     }
 
     syncPreferences();
     placeToolbar();
+    bindMiddleClickFix();
     bindPopupCompactModeGuard(toolbar);
+    bindContextMenuSettings();
+
+    setTimeout(scheduleGapFix, 150);
+    setTimeout(scheduleGapFix, 500);
 
     Services.prefs.addObserver(PREF_PREFIX, syncPreferences);
     window.addEventListener(
@@ -240,6 +437,12 @@
     rootObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["zen-compact-mode", "zen-single-toolbar"],
+    });
+
+    const toolboxObserver = new MutationObserver(() => scheduleGapFix());
+    toolboxObserver.observe(toolbox, {
+      attributes: true,
+      attributeFilter: ["zen-has-hover", "zen-has-implicit-hover"],
     });
 
     window.addEventListener("resize", scheduleGapFix);
