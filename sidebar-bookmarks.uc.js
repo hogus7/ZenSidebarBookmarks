@@ -22,6 +22,26 @@
   let gapPending = false;
   let openPopupCount = 0;
 
+  function getPlacesModules() {
+    let pUtils = window.PlacesUtils || globalThis.PlacesUtils;
+    let pUIUtils = window.PlacesUIUtils || globalThis.PlacesUIUtils;
+    try {
+      if (!pUtils) {
+        ({ PlacesUtils: pUtils } = ChromeUtils.importESModule(
+          "resource://gre/modules/PlacesUtils.sys.mjs"
+        ));
+      }
+    } catch {}
+    try {
+      if (!pUIUtils) {
+        ({ PlacesUIUtils: pUIUtils } = ChromeUtils.importESModule(
+          "resource:///modules/PlacesUIUtils.sys.mjs"
+        ));
+      }
+    } catch {}
+    return { PlacesUtils: pUtils, PlacesUIUtils: pUIUtils };
+  }
+
   function syncPreferences() {
     const rootStyle = document.documentElement.style;
     for (const { key } of PREF_CONFIG) {
@@ -182,60 +202,110 @@
     requestAnimationFrame(placeToolbar);
   }
 
-  // Naprawa MMB (środkowego przycisku myszy) – otwieranie w karcie w tle
-  function bindMiddleClickFix() {
-    const toolbox = document.getElementById("navigator-toolbox");
-    if (!toolbox || toolbox.__zenBookmarkMmbBound) return;
-    toolbox.__zenBookmarkMmbBound = true;
+  function findBookmarkButtonFromEvent(e) {
+    const path = typeof e.composedPath === "function" ? e.composedPath() : [e.target];
+    for (const el of path) {
+      if (
+        el?.nodeType === 1 &&
+        el.matches?.("toolbarbutton.bookmark-item, menuitem.bookmark-item")
+      ) {
+        if (el.closest("#PersonalToolbar")) return el;
+      }
+    }
+    return null;
+  }
 
-    toolbox.addEventListener(
+  function openBookmarkInBackground(node, event) {
+    const { PlacesUtils, PlacesUIUtils } = getPlacesModules();
+    const isUri = PlacesUtils ? PlacesUtils.nodeIsURI(node) : Boolean(node.uri);
+    const isContainer = PlacesUtils ? PlacesUtils.nodeIsContainer(node) : false;
+
+    if (isUri && node.uri) {
+      try {
+        if (typeof PlacesUIUtils?._openNodeIn === "function") {
+          PlacesUIUtils._openNodeIn(node, "tabshifted", window);
+          return;
+        }
+        if (typeof PlacesUIUtils?.openNodeIn === "function") {
+          PlacesUIUtils.openNodeIn(node, "tabshifted", { ownerWindow: window });
+          return;
+        }
+      } catch {}
+
+      try {
+        if (typeof window.openTrustedLinkIn === "function") {
+          window.openTrustedLinkIn(node.uri, "tab", {
+            inBackground: true,
+            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          });
+          return;
+        }
+      } catch {}
+
+      try {
+        if (window.gBrowser?.addTrustedTab) {
+          window.gBrowser.addTrustedTab(node.uri, { inBackground: true });
+          return;
+        }
+      } catch {}
+
+      if (window.gBrowser?.loadOneTab) {
+        window.gBrowser.loadOneTab(node.uri, {
+          inBackground: true,
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
+      }
+      return;
+    }
+
+    if (isContainer && PlacesUIUtils?.openNodeWithEvent) {
+      PlacesUIUtils.openNodeWithEvent(node, event);
+    }
+  }
+
+  // Naprawa MMB na poziomie całego okna (capture) – omija blokadę ze strony #tabbrowser-tabs
+  function bindMiddleClickFix() {
+    if (window.__zenBookmarkMmbBound) return;
+    window.__zenBookmarkMmbBound = true;
+
+    let pressedBtn = null;
+
+    window.addEventListener(
       "mousedown",
       (e) => {
         if (e.button !== 1) return;
-        const btn = e.target?.closest?.("#PersonalToolbar toolbarbutton.bookmark-item");
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-      },
-      true
-    );
-
-    toolbox.addEventListener(
-      "auxclick",
-      (e) => {
-        if (e.button !== 1) return;
-        const btn = e.target?.closest?.("#PersonalToolbar toolbarbutton.bookmark-item");
-        if (!btn) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const node = btn._placesNode;
-        if (!node) return;
-
-        try {
-          if (typeof PlacesUtils !== "undefined" && PlacesUtils.nodeIsURI(node)) {
-            if (typeof PlacesUIUtils?._openNodeIn === "function") {
-              PlacesUIUtils._openNodeIn(node, "tabshifted", window);
-            } else if (typeof PlacesUIUtils?.openNodeIn === "function") {
-              PlacesUIUtils.openNodeIn(node, "tabshifted", { ownerWindow: window });
-            } else {
-              throw new Error("Fallback");
-            }
-          } else if (typeof PlacesUtils !== "undefined" && PlacesUtils.nodeIsContainer(node)) {
-            PlacesUIUtils.openNodeWithEvent(node, e);
-          }
-        } catch {
-          if (node.uri && typeof openTrustedLinkIn === "function") {
-            openTrustedLinkIn(node.uri, "tab", {
-              inBackground: true,
-              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-            });
-          }
+        const btn = findBookmarkButtonFromEvent(e);
+        if (!btn) {
+          pressedBtn = null;
+          return;
         }
+        pressedBtn = btn;
+        e.preventDefault();
+        e.stopPropagation();
       },
       true
     );
+
+    const handleRelease = (e) => {
+      if (e.button !== 1) return;
+      const btn = findBookmarkButtonFromEvent(e);
+      if (!btn || btn !== pressedBtn) {
+        if (e.type === "auxclick") pressedBtn = null;
+        return;
+      }
+
+      pressedBtn = null;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const node = btn._placesNode || btn.node;
+      if (node) {
+        openBookmarkInBackground(node, e);
+      }
+    };
+
+    window.addEventListener("mouseup", handleRelease, true);
+    window.addEventListener("auxclick", handleRelease, true);
   }
 
   function bindPopupCompactModeGuard(toolbar) {
@@ -277,7 +347,6 @@
     }
   }
 
-  // Wbudowany panel ustawień pod PPM -> "Ustawienia kafelków zakładek..."
   function openSettingsPanel() {
     const toolbar = document.getElementById("PersonalToolbar");
     if (!toolbar) return;
