@@ -19,6 +19,7 @@
   ];
 
   let rafPending = false;
+  let gapPending = false;
   let openPopupCount = 0;
 
   function syncPreferences() {
@@ -79,6 +80,82 @@
     return null;
   }
 
+  function resetCompactGapFix(toolbox) {
+    if (!toolbox) return;
+    toolbox.removeAttribute("zen-sb-gap-fixed");
+    toolbox.style.removeProperty("--zen-sb-box-fix");
+    toolbox.style.removeProperty("--zen-sb-title-fix");
+    toolbox.style.removeProperty("--zen-sb-target-top");
+  }
+
+  function fixCompactTopGap() {
+    gapPending = false;
+    const root = document.documentElement;
+    const toolbox = document.getElementById("navigator-toolbox");
+    if (!toolbox) return;
+
+    const isCompact = root.getAttribute("zen-compact-mode") === "true";
+    const isSingle = root.getAttribute("zen-single-toolbar") === "true";
+    if (!isCompact || isSingle) {
+      resetCompactGapFix(toolbox);
+      return;
+    }
+
+    if (getComputedStyle(toolbox).position === "static") {
+      resetCompactGapFix(toolbox);
+      return;
+    }
+
+    const navbar =
+      document.getElementById("zen-appcontent-navbar-wrapper") ||
+      document.getElementById("nav-bar");
+    if (!navbar) {
+      resetCompactGapFix(toolbox);
+      return;
+    }
+
+    const navRect = navbar.getBoundingClientRect();
+    // Jeśli górny pasek też jest schowany (Hide Toolbar / Hide Both), nie ruszamy odstępu
+    if (navRect.height < 10 || navRect.bottom < 10) {
+      resetCompactGapFix(toolbox);
+      return;
+    }
+
+    const targetTop = Math.round(navRect.bottom + 4);
+    toolbox.style.setProperty("--zen-sb-target-top", `${targetTop}px`);
+
+    const titlebar = document.getElementById("titlebar") || toolbox;
+    const boxRect = toolbox.getBoundingClientRect();
+    const titleRect = titlebar.getBoundingClientRect();
+
+    const curBoxFix = parseFloat(toolbox.style.getPropertyValue("--zen-sb-box-fix")) || 0;
+    const curTitleFix = parseFloat(toolbox.style.getPropertyValue("--zen-sb-title-fix")) || 0;
+
+    const boxExcess = Math.round(boxRect.top - targetTop);
+    if (Math.abs(boxExcess) > 2) {
+      const nextBoxFix = Math.max(0, Math.min(90, curBoxFix + boxExcess));
+      toolbox.style.setProperty("--zen-sb-box-fix", `${nextBoxFix}px`);
+    }
+
+    const updatedBoxRect = toolbox.getBoundingClientRect();
+    const updatedTitleRect = titlebar.getBoundingClientRect();
+    const titleExcess = Math.round(updatedTitleRect.top - targetTop);
+
+    // Jeśli nadal jest przerwa wewnątrz #navigator-toolbox (np. padding/margin na #titlebar)
+    if (Math.abs(titleExcess) > 2 && updatedBoxRect.top <= targetTop + 4) {
+      const nextTitleFix = Math.max(0, Math.min(90, curTitleFix + titleExcess));
+      toolbox.style.setProperty("--zen-sb-title-fix", `${nextTitleFix}px`);
+    }
+
+    toolbox.setAttribute("zen-sb-gap-fixed", "true");
+  }
+
+  function scheduleGapFix() {
+    if (gapPending) return;
+    gapPending = true;
+    requestAnimationFrame(fixCompactTopGap);
+  }
+
   function placeToolbar() {
     rafPending = false;
     if (document.documentElement.hasAttribute("customizing")) return;
@@ -100,6 +177,7 @@
     }
 
     toolbar.classList.add("zen-sidebar-bookmark-tiles");
+    scheduleGapFix();
   }
 
   function schedulePlacement() {
@@ -158,6 +236,13 @@
       subtree: true,
     });
 
+    const rootObserver = new MutationObserver(() => scheduleGapFix());
+    rootObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["zen-compact-mode", "zen-single-toolbar"],
+    });
+
+    window.addEventListener("resize", scheduleGapFix);
     window.addEventListener("ZenWorkspaces:Select", schedulePlacement);
     window.addEventListener("ZenWorkspaces:Change", schedulePlacement);
     window.addEventListener("aftercustomization", schedulePlacement);
